@@ -7,8 +7,7 @@ from PIL import Image
 from io import BytesIO
 import re
 import joblib
-import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
+
 
 
 # Directorio donde se encuentra el modelo KNN entrenado
