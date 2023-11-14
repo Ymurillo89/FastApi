@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,13 +6,19 @@ from PIL import Image
 from io import BytesIO
 import re
 import joblib
-
-
+import cv2
+import pandas as pd
+import numpy as np
+from skimage import io, color, feature
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
 
 # Directorio donde se encuentra el modelo KNN entrenado
-model_path = 'assets/Modelo_faces_KNN.pkl'
+model_path = 'assets/modelFruits.pkl'
 
-#Cargar el modelo
+# Cargar el modelo
 knn_model = joblib.load(model_path)
 
 app = FastAPI()
@@ -51,15 +56,41 @@ async def upload_file(image_request: ImageRequest):
         # Crear una imagen a partir de los datos binarios
         image = Image.open(BytesIO(image_data))       
 
+        # Convertir de RGB a BGR
+        image_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+        # Convertir la imagen BGR a escala de grises
+        image_gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+
+        # Calcular el Local Binary Pattern (LBP)
+        lbp = feature.local_binary_pattern(image_gray, P=8, R=1, method='uniform')
+        hist_lbp, _ = np.histogram(lbp.ravel(), bins=np.arange(0, 10), range=[0, 9])
+
+        image_bgr = np.array(image)[:, :, :3]  # Considerar solo los canales RGB
+        hist_bgr = cv2.calcHist([image_bgr], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist_bgr = hist_bgr.flatten()
+        image_hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+        hist_hsv = cv2.calcHist([image_hsv], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist_hsv = hist_hsv.flatten()
+        image_lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
+        hist_lab = cv2.calcHist([image_lab], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist_lab = hist_lab.flatten()
+        image_gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        lbp = feature.local_binary_pattern(image_gray, P=8, R=1, method='uniform')
+        hist_lbp, _ = np.histogram(lbp.ravel(), bins=np.arange(0, 10), range=[0, 9])
+        size_feature = image.size
+        features = list(hist_bgr) + list(hist_hsv) + list(hist_lab) + list(hist_lbp) + [size_feature]
+
+        # Normalizar características usando el escalador
+        features_normalized = scaler.transform([features])
+
+        # Realizar la predicción usando el modelo KNN
+        prediction_label = knn_model.predict(features_normalized)[0]
+        predicted_fruit = [key for key, value in labels.items() if value == prediction_label][0]
+
         # Responder al cliente con un mensaje o los resultados del procesamiento
         return {"message": "Imagen procesada exitosamente"}
     except PIL.UnidentifiedImageError as e:
         return {"error": "No se pudo identificar la imagen. Verifica el formato y los datos de la imagen."}
 
-
-@app.get("/hello")
-def hello_world():
-    return {"message": "Hello, World!"}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# Resto del código...
