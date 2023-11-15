@@ -17,9 +17,13 @@ from sklearn.metrics import accuracy_score
 
 # Directorio donde se encuentra el modelo KNN entrenado
 model_path = 'assets/modelFruits.pkl'
+scaler_path = 'assets/escaladorFruits.pkl'
+labels_path = 'assets/labelFruits.joblib'
 
-# Cargar el modelo
+# Cargar el modelo, escalador y etiquetas
 knn_model = joblib.load(model_path)
+scaler = joblib.load(scaler_path)
+labels = joblib.load(labels_path)
 
 app = FastAPI()
 
@@ -43,6 +47,7 @@ class ImageRequest(BaseModel):
 
 @app.post("/uploadfile")
 async def upload_file(image_request: ImageRequest):
+   
     # Obtener el tipo de imagen (por ejemplo, 'image/jpeg')
     image_type = re.search(r'^data:image/(\w+);base64,', image_request.image).group(1)
 
@@ -81,13 +86,24 @@ async def upload_file(image_request: ImageRequest):
         size_feature = image.size
         features = list(hist_bgr) + list(hist_hsv) + list(hist_lab) + list(hist_lbp) + [size_feature]
 
-        # Normalizar características usando el escalador
-        features_normalized = scaler.transform([features])
+        #print(len(features))
+        # Normalizar características usando el escalador        
+        features_normalized = scaler.fit_transform(np.array(features[:-1]).reshape(1, -1))
+     
+        # Aplicar KNN para clasificar la nueva señal de audio
+        knn = KNeighborsClassifier(n_neighbors=5)  # Utiliza el mismo número de vecinos que se usó en el modelo entrenado
+        # Carga las etiquetas correspondientes (y_train)
+        X_train = joblib.load('assets/modelFruits.pkl')
+        y_train_dict = joblib.load('assets/labelFruits.joblib')
 
-        # Realizar la predicción usando el modelo KNN
-        prediction_label = knn_model.predict(features_normalized)[0]
-        predicted_fruit = [key for key, value in labels.items() if value == prediction_label][0]
+        # Transformar el diccionario de etiquetas a una lista
+        y_train = [y_train_dict[fruit] for fruit in y_train_dict.keys()]
 
+        print(X_train)
+        print(y_train)
+
+        knn.fit(X_train, y_train_dict)
+       
         # Responder al cliente con un mensaje o los resultados del procesamiento
         return {"message": "Imagen procesada exitosamente"}
     except PIL.UnidentifiedImageError as e:
